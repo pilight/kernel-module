@@ -1,23 +1,12 @@
-# Makefile for compiling Kernel
-# modules on the fly.
+obj-m = pilight.o
+KVERSION = $(shell uname -r)
+KPATH = /media/rpi/xbian/linux-headers-3.10.12+/
+#KPATH = /lib/modules/$(KVERSION)/build/
 
-# Modulename
-MODULE=pilight_receiver
-
-obj-m += ${MODULE}.o
-
-KVERSION := $(shell uname -r)
-INCLUDE += -I/usr/src/linux-headers-$(KVERSION)/arch/arm/mach-omap2/include
-INCLUDE += -I/usr/src/linux-headers-$(KVERSION)/arch/arm/plat-omap/include
-
-pilight_receiver_test: pilight_receiver_test.o
-	gcc -o pilight_receiver_test pilight_receiver_test.o
-
-pilight_receiver_test.o: pilight_receiver_test.c
-	gcc -c pilight_receiver_test.c
-
-module:
-	make -C $(INCLUDE) M=$(PWD) modules
+all:
+	make -C $(KPATH) ARCH=arm CROSS_COMPILE=/home/xbian/x-tools/arm-xbian-linux-gnueabi/bin/arm-xbian-linux-gnueabi- M=$(PWD) modules
+	#cp pilight.ko /lib/modules/3.10.18+/kernel/
+	#modprobe pilight
 
 clean:
-	make -C $(INCLUDE) M=$(PWD) clean
+	make -C $(KPATH) M=$(PWD) clean

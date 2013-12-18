@@ -13,6 +13,7 @@
 #include <linux/slab.h>
 #include <linux/mutex.h>
 #include <linux/delay.h>
+#include <linux/poll.h>
 
 #define BUFFER_SIZE					4000
 #define QUEUE_SIZE					1800
@@ -43,6 +44,7 @@ typedef struct pulsequeue_t {
 
 struct pulsequeue_t *pulsequeue;
 struct pulsequeue_t *pulsequeue_head;
+wait_queue_head_t pulsequeue_inq;
 int pulsequeue_number = 0;
 int pulsequeue_capture = 0;
 struct pulsequeue_t *tmp = NULL;
@@ -72,31 +74,24 @@ static irqreturn_t pilight_irq(int irq, void *dev_id, struct pt_regs *regs) {
 
 		pulse = pilight_filter((int)timestamp.second-(int)timestamp.first);
 		if(pulse > 0) {
-			node = kmalloc(sizeof(struct pulsequeue_t), GFP_KERNEL);
-			node->pulse = (int)timestamp.second-(int)timestamp.first;
+			if(pulsequeue_number < QUEUE_SIZE) {
+				rcu_read_lock();
+				node = kmalloc(sizeof(struct pulsequeue_t), GFP_KERNEL);
+				node->pulse = (int)timestamp.second-(int)timestamp.first;
 
-			if(pulsequeue_number == 0) {
-				rcu_assign_pointer(pulsequeue, node);
-				rcu_assign_pointer(pulsequeue_head, node);
-			} else {
-				rcu_assign_pointer(pulsequeue_head->next, node);
-				rcu_assign_pointer(pulsequeue_head, node);
+				if(pulsequeue_number == 0) {
+					rcu_assign_pointer(pulsequeue, node);
+					rcu_assign_pointer(pulsequeue_head, node);
+				} else {
+					rcu_assign_pointer(pulsequeue_head->next, node);
+					rcu_assign_pointer(pulsequeue_head, node);
+				}
+
+				pulsequeue_number++;
+				rcu_read_unlock();
 			}
-
-			pulsequeue_number++;
-			//printk(KERN_INFO "pilight_irq() %d\n", pulsequeue_number);
-		}
-	}
-	
-	if(pulsequeue_number > QUEUE_SIZE) {
-		while(pulsequeue_number > 0) {
-			rcu_read_lock();
-			tmp = rcu_dereference(pulsequeue);
-			printk(KERN_INFO "pilight_irq() %d\n", pulsequeue->pulse);
-			pulsequeue = pulsequeue->next;
-			kfree(tmp);
-			pulsequeue_number--;
-			rcu_read_unlock();
+			wake_up_interruptible(&pulsequeue_inq);
+			// printk(KERN_INFO "pilight_irq() %d\n", pulsequeue_number);
 		}
 	}
 
@@ -110,7 +105,7 @@ static struct class *cl;
 static int pilight_open(struct inode *i, struct file *f) {
 	//printk(KERN_INFO "pilight_open()\n");
 	pulsequeue_capture = 1;
-	return 0;
+	return nonseekable_open(i, f);
 }
 
 static int pilight_close(struct inode *i, struct file *f) {
@@ -123,26 +118,31 @@ static ssize_t pilight_read(struct file *f, char __user *buf, size_t len, loff_t
 	
 	ssize_t retval = 0;
 
-	// printk(KERN_INFO "pilight_read()\n");
-	while(pulsequeue_number == 0) {
-		msleep(1);
-	}
-	rcu_read_lock();
-	tmp = rcu_dereference(pulsequeue);	
-	
-	sprintf(output, "%d", pulsequeue->pulse);
-	if(copy_to_user(buf, output, len) != 0) {
-		retval = -EFAULT;
-	} else {
-		retval = strlen(buf);
+	if(pulsequeue_number == 0) {
+		wait_event_interruptible(pulsequeue_inq, (pulsequeue_number > 0));
 	}
 
-	pulsequeue = pulsequeue->next;
-	kfree(tmp);
-	pulsequeue_number--;	
-	rcu_read_unlock();
+	if(pulsequeue_number > 0) {
+		rcu_read_lock();
+		if((tmp = rcu_dereference(pulsequeue)) != NULL) {
+			sprintf(output, "%d", pulsequeue->pulse);
+			if(copy_to_user(buf, output, len) != 0) {
+				retval = -EFAULT;
+			} else {
+				retval = strlen(buf);
+			}
 
-	return retval;
+			pulsequeue = pulsequeue->next;
+			kfree(tmp);
+			pulsequeue_number--;
+			rcu_read_unlock();
+			return retval;
+		} else {
+			rcu_read_unlock();
+			return -1;
+		}
+	}
+	return 0;
 }
 
 static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len, loff_t *off) {
@@ -235,6 +235,8 @@ static int __init pilight_init(void) {
 
 	memset(output, '\0', BUFFER_SIZE);
 
+	init_waitqueue_head(&pulsequeue_inq);
+	
 	if(pilight_init_gpio() != 0) {
 		return -1;
 	}	
@@ -280,7 +282,17 @@ static void __exit pilight_exit(void) {
 	unregister_chrdev_region(first, 1);
 
 	pilight_deinit_gpio();	
-	
+
+	while(pulsequeue_number > 0) {
+		if((tmp = rcu_dereference(pulsequeue)) != NULL) {
+			pulsequeue = pulsequeue->next;
+			kfree(tmp);
+			pulsequeue_number--;
+		} else {
+			break;
+		}
+	}	
+
 	//printk(KERN_INFO "%s\n", __func__);
 
 }

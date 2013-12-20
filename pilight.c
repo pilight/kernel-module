@@ -83,7 +83,7 @@ static irqreturn_t pilight_irq(int irq, void *dev_id, struct pt_regs *regs) {
 		pulse_length = pilight_filter((int)timestamp.second-(int)timestamp.first);
 		
 		if(pulse_length > 0) {
-			printk(KERN_INFO "pulse %d: %d\n", n, pulse_length);
+			//printk(KERN_INFO "pulse %d: %d\n", n, pulse_length);
 			n++;
 			error_n = kfifo_put(&pulse_fifo, &pulse_length);
 			wake_up_interruptible(&fifo_list);
@@ -134,7 +134,6 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 
 int pilight_init_gpio(void) {
 
-	int irq = -1;
 	int error_n = 0;
 
 	if(!gpio_is_valid(gpio_pin)) {
@@ -162,13 +161,14 @@ int pilight_init_gpio(void) {
 		return -1;
 	}	
 	
-	if((irq = request_irq(irq_gpio_pin, (irq_handler_t)pilight_irq, IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING, GPIO_PIN_STR, GPIO_PIN_DEV_STR)) < 0) {
+	if(request_irq(irq_gpio_pin, (irq_handler_t)pilight_irq, IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING, GPIO_PIN_STR, GPIO_PIN_DEV_STR) < 0) {
 		printk(KERN_INFO "cannot request irq for gpio %d\n", gpio_pin);
 		return -1;
 	}
+	disable_irq(irq_gpio_pin);
 	_free_irq = 1;
 
-	printk(KERN_INFO "successfully requested irq %d for gpio %d\n", irq, gpio_pin);
+	printk(KERN_INFO "successfully requested irq %d for gpio %d\n", irq_gpio_pin, gpio_pin);
 	return 0;
 }
 

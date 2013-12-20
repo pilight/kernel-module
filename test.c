@@ -12,11 +12,11 @@
 
 #define POLL_TIMEOUT				1000
 
-#define IOCTL_GPIO_IN				1
-#define IOCTL_LONGEST_V_P			2
-#define IOCTL_SHORTEST_V_P			3
-#define IOCTL_START_RECEIVER			4
-#define IOCTL_STOP_RECEIVER			5
+#define IOCTL_GPIO_IN				10
+#define IOCTL_LONGEST_V_P			11
+#define IOCTL_SHORTEST_V_P			12
+#define IOCTL_START_RECEIVER		13
+#define IOCTL_STOP_RECEIVER			14
 
 int main(void) {
 	int f = -1;

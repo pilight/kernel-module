@@ -23,11 +23,11 @@
 #define GPIO_PIN_STR				"pilight rf-in"
 #define DEVICE_NAME					"pilight"
 
-#define IOCTL_GPIO_IN				1
-#define IOCTL_LONGEST_V_P			2
-#define IOCTL_SHORTEST_V_P			3
-#define IOCTL_START_RECEIVER		4
-#define IOCTL_STOP_RECEIVER			5
+#define IOCTL_GPIO_IN				10
+#define IOCTL_LONGEST_V_P			11
+#define IOCTL_SHORTEST_V_P			12
+#define IOCTL_START_RECEIVER		13
+#define IOCTL_STOP_RECEIVER			14
 
 #define PILIGHT_DEVICES_N			1
 
@@ -195,19 +195,19 @@ static long pilight_ioctl(struct file *f, unsigned int name, unsigned long val) 
 			}
 			break;
 		case IOCTL_LONGEST_V_P:
-			printk(KERN_INFO "pilight_ioctl longest valid pulse: %d", (int)val);
+			printk(KERN_INFO "pilight_ioctl longest valid pulse: %d\n", (int)val);
 			longest_valid_pulse = (int)val;
 			break;
 		case IOCTL_SHORTEST_V_P:
-			printk(KERN_INFO "pilight_ioctl shortest valid pulse: %d", (int)val);
+			printk(KERN_INFO "pilight_ioctl shortest valid pulse: %d\n", (int)val);
 			shortest_valid_pulse = (int)val;
 			break;
 		case IOCTL_START_RECEIVER:
-			printk(KERN_INFO "pilight_ioctl start receiver command");
+			printk(KERN_INFO "pilight_ioctl start receiver command\n");
 			enable_irq(irq_gpio_pin);
 			break;
 		case IOCTL_STOP_RECEIVER:
-			printk(KERN_INFO "pilight_ioctl stop receiver command");
+			printk(KERN_INFO "pilight_ioctl stop receiver command\n");
 			disable_irq(irq_gpio_pin);
 			break;
 			 

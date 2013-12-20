@@ -31,7 +31,6 @@
 
 #define SHORTEST_PULSEWIDTH 150
 #define LONGEST_PULSEWIDTH 20000
-#define MINIMAL_CMD_LENGTH 45
 
 int gpio_in = 0;
 int gpio_out = 0;
@@ -58,26 +57,12 @@ unsigned short gpioHwInit(void) {
 		return EXIT_FAILURE;
 	}
 	pinMode(gpio_out, OUTPUT);
-	/*if(wiringPiISR(gpio_in, INT_EDGE_BOTH) < 0) {
-		logprintf(LOG_ERR, "unable to register interrupt for pin %d", gpio_in) ;
-		if(allocated) {
-			sfree((void *)&mode);
-		}
-		return EXIT_SUCCESS;
-	}
-	if(allocated) {
-		sfree((void *)&mode);
-	}*/
-	initPilightReceiver(gpio_in,SHORTEST_PULSEWIDTH,LONGEST_PULSEWIDTH,MINIMAL_CMD_LENGTH);
+	initPilightReceiver(gpio_in,SHORTEST_PULSEWIDTH,LONGEST_PULSEWIDTH);
 	return EXIT_SUCCESS;
 }
 
 unsigned short gpioHwDeinit(void) {
 	FILE *fd;
-	/*if((fd = fopen ("/sys/class/gpio/unexport", "w"))) {
-		fprintf(fd, "%d\n", wpiPinToGpio(gpio_in));
-		fclose(fd);
-	}*/
    deinitPilightReceiver();
 	if((fd = fopen ("/sys/class/gpio/unexport", "w"))) {
 		fprintf(fd, "%d\n", wpiPinToGpio(gpio_out));

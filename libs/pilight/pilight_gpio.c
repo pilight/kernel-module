@@ -27,6 +27,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/ioctl.h>
 #include <unistd.h>
 #include <poll.h>
 
@@ -111,7 +112,7 @@ int getWiringPiPin(int pin)
 }
 
 
-void initPilightReceiver(int gpio_in, int shortest_pw, int longest_pw, int minimal_cmd_length)
+void initPilightReceiver(int gpio_in, int shortest_pw, int longest_pw)
 {
 	if((f = open(DEVICE_PATH, O_RDONLY)) == -1) {
 		perror("open");

@@ -50,8 +50,6 @@ struct {
 struct timeval tv;
 unsigned char valid_buffer = 0x00;
 
-int record_pulses = 0;
-
 static DECLARE_WAIT_QUEUE_HEAD(fifo_list);
 static DECLARE_KFIFO_PTR(pulse_fifo, int);
 
@@ -75,19 +73,18 @@ static irqreturn_t pilight_irq(int irq, void *dev_id, struct pt_regs *regs) {
 	
 	//printk(KERN_INFO "pilight_irq()\n");
 	
-	if(record_pulses) {
-		do_gettimeofday(&tv);
-		timestamp.first = timestamp.second;
-		timestamp.second = 1000000 * (unsigned int)tv.tv_sec + (unsigned int)tv.tv_usec;
+	
+	do_gettimeofday(&tv);
+	timestamp.first = timestamp.second;
+	timestamp.second = 1000000 * (unsigned int)tv.tv_sec + (unsigned int)tv.tv_usec;
 
-		pulse_length = pilight_filter((int)timestamp.second-(int)timestamp.first);
-		
-		if(pulse_length > 0) {
-			//printk(KERN_INFO "pulse %d: %d\n", n, pulse_length);
-			n++;
-			error_n = kfifo_put(&pulse_fifo, &pulse_length);
-			wake_up_interruptible(&fifo_list);
-		}
+	pulse_length = pilight_filter((int)timestamp.second-(int)timestamp.first);
+	
+	if(pulse_length > 0) {
+		//printk(KERN_INFO "pulse %d: %d\n", n, pulse_length);
+		n++;
+		error_n = kfifo_put(&pulse_fifo, &pulse_length);
+		wake_up_interruptible(&fifo_list);
 	}
 
 	return IRQ_HANDLED;
@@ -100,13 +97,11 @@ static int pilight_devices_n = PILIGHT_DEVICES_N;
 
 static int pilight_open(struct inode *i, struct file *f) {
 	//printk(KERN_INFO "pilight_open()\n");
-	record_pulses = 1;
 	return nonseekable_open(i, f);
 }
 
 static int pilight_close(struct inode *i, struct file *f) {
 	//printk(KERN_INFO "pilight_close()\n");
-	record_pulses = 0;
 	return 0;
 }
 
@@ -187,28 +182,25 @@ static long pilight_ioctl(struct file *f, unsigned int name, unsigned long val) 
 	//printk(KERN_INFO "pilight_ioctl()\n");
 	 switch(name) {
 		case IOCTL_GPIO_IN:
-			printk(KERN_INFO "pilight_ioctl gpio pin: %d", (int)val);
 			gpio_pin = (int)val;
-			pilight_deinit_gpio();
-			if(pilight_init_gpio() != 0) {
-				return -1;
-			}
 			break;
 		case IOCTL_LONGEST_V_P:
-			printk(KERN_INFO "pilight_ioctl longest valid pulse: %d\n", (int)val);
 			longest_valid_pulse = (int)val;
 			break;
 		case IOCTL_SHORTEST_V_P:
-			printk(KERN_INFO "pilight_ioctl shortest valid pulse: %d\n", (int)val);
 			shortest_valid_pulse = (int)val;
 			break;
 		case IOCTL_START_RECEIVER:
-			printk(KERN_INFO "pilight_ioctl start receiver command\n");
+			printk(KERN_INFO "starting receiver with gpio pin: %d, shortest valid pulse: %d, longest valid pulse: %d\n",gpio_pin,shortest_valid_pulse,longest_valid_pulse);
+			if(pilight_init_gpio() != 0) {
+				return -1;
+			}
 			enable_irq(irq_gpio_pin);
 			break;
 		case IOCTL_STOP_RECEIVER:
-			printk(KERN_INFO "pilight_ioctl stop receiver command\n");
+			printk(KERN_INFO "stopping receiver\n");
 			disable_irq(irq_gpio_pin);
+			pilight_deinit_gpio();
 			break;
 			 
 		default:
@@ -277,61 +269,58 @@ static void pilight_cleanup(int devices_to_destroy){
 
 static int __init pilight_init(void) {
 	//printk(KERN_INFO "%s\n", __func__);
-   int error_n = 0, i = 0;
-   int devices_to_destroy = 0;
-   
-   dev_t dev = 0;
-   
+	int error_n = 0, i = 0;
+	int devices_to_destroy = 0;
+	
+	dev_t dev = 0;
+	
 	memset(out_buf, '\0', OUTPUT_BUFFER_SIZE);
-
+	
 	error_n = kfifo_alloc(&pulse_fifo, FIFO_BUFFER_SIZE, GFP_KERNEL);
-
+	
 	if(error_n){
 		printk(KERN_ERR "error on fifo allocation\n");
 		return error_n;
 	}
 	
-	if(pilight_init_gpio() != 0) {
-		return -1;
+	
+	if(pilight_devices_n <= 0) {
+		printk(KERN_INFO "invalid number of pilight devices (%d)\n", pilight_devices_n);
+		return -EINVAL;
 	}
-   
-   if(pilight_devices_n <= 0) {
-      printk(KERN_INFO "invalid number of pilight devices (%d)\n", pilight_devices_n);
-      return -EINVAL;
-   }
-
+	
 	if(alloc_chrdev_region(&dev, 0, pilight_devices_n, DEVICE_NAME) < 0) {
 		printk(KERN_INFO "failed to allocate pilight %d devices\n", pilight_devices_n);
 		pilight_deinit_gpio();
 		return -1;
 	}
-
-   major_device_num = MAJOR(dev);
-
-   cl = class_create(THIS_MODULE, DEVICE_NAME);
+	
+	major_device_num = MAJOR(dev);
+	
+	cl = class_create(THIS_MODULE, DEVICE_NAME);
 	if(IS_ERR(cl)) {
 		printk(KERN_INFO "failed to create pilight device\n");
 		pilight_cleanup(devices_to_destroy);
 		return PTR_ERR(cl);
 	}
-   
-   pilight_devices = (struct cdev *)kzalloc(pilight_devices_n * sizeof(struct cdev), GFP_KERNEL);
-   if(!pilight_devices){
-      pilight_cleanup(devices_to_destroy);
-      return -ENOMEM;
-   }
-   
-   for(i = 0; i < pilight_devices_n; ++i){
-      error_n = pilight_consturct_device(&pilight_devices[i], i, cl);
-      if(error_n){
-         devices_to_destroy = 1;
-         pilight_cleanup(devices_to_destroy);
-         return error_n;
-      }
-   }
-   
-   printk(KERN_INFO "pilight device driver registered, major %d\n",major_device_num);
-   
+	
+	pilight_devices = (struct cdev *)kzalloc(pilight_devices_n * sizeof(struct cdev), GFP_KERNEL);
+	if(!pilight_devices){
+		pilight_cleanup(devices_to_destroy);
+		return -ENOMEM;
+	}
+
+	for(i = 0; i < pilight_devices_n; ++i){
+		error_n = pilight_consturct_device(&pilight_devices[i], i, cl);
+		if(error_n){
+			devices_to_destroy = 1;
+			pilight_cleanup(devices_to_destroy);
+			return error_n;
+		}
+	}
+	
+	printk(KERN_INFO "pilight device driver registered, major %d\n",major_device_num);
+	
 	return 0;
 }
 

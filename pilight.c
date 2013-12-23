@@ -2,9 +2,12 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/irq.h>
+#include <linux/string.h>
 #include <linux/gpio.h>
 #include <linux/pid.h>
 #include <asm/uaccess.h>
+#include <linux/delay.h>
 #include <linux/fs.h>
 #include <linux/signal.h>
 #include <linux/sched.h>
@@ -12,9 +15,13 @@
 #include <linux/cdev.h>
 #include <linux/slab.h>
 #include <linux/kfifo.h>
+#include <linux/errno.h>
+#include <linux/time.h>
+#include <linux/platform_device.h>
+#include <linux/spinlock.h>
 
 #define OUTPUT_BUFFER_SIZE			4000
-#define FIFO_BUFFER_SIZE			255
+#define FIFO_BUFFER_SIZE			25
 #define GPIO_IN						18
 #define LONGEST_VALID_PULSE			20000
 #define SHORTEST_VALID_PULSE		150
@@ -53,6 +60,12 @@ unsigned char valid_buffer = 0x00;
 static DECLARE_WAIT_QUEUE_HEAD(fifo_list);
 static DECLARE_KFIFO_PTR(pulse_fifo, int);
 
+struct gpio_chip *gpiochip;
+struct irq_chip *irqchip;
+struct irq_data *irqdata;
+
+static DEFINE_SPINLOCK(lock);        /* GPIO registers */
+
 static int pilight_filter(int pulse_length) {
 	valid_buffer <<= 1;
   
@@ -67,7 +80,11 @@ static int pilight_filter(int pulse_length) {
 }
 
 static irqreturn_t pilight_irq(int irq, void *dev_id, struct pt_regs *regs) {
+	int signal;
 	int pulse_length = 0;
+
+	signal = gpiochip->get(gpiochip, gpio_pin);
+	irqchip->irq_unmask(irqdata);
 
 	//printk(KERN_INFO "pilight_irq()\n");
 
@@ -82,7 +99,6 @@ static irqreturn_t pilight_irq(int irq, void *dev_id, struct pt_regs *regs) {
 		kfifo_put(&pulse_fifo, &pulse_length);
 		wake_up_interruptible(&fifo_list);
 	}
-
 	return IRQ_HANDLED;
 }
 
@@ -128,49 +144,80 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 	return len;
 }
 
-int pilight_init_gpio(void) {
+static int is_right_chip(struct gpio_chip *chip, void *data) {
+	//printk(KERN_INFO "is_right_chip %s %d\n", chip->label, strcmp(data, chip->label));
 
-	int error_n = 0;
-
-	if(!gpio_is_valid(gpio_pin)) {
-		printk(KERN_INFO "gpio number %d is invalid\n", gpio_pin);
-		return -1;
+	if(strcmp(data, chip->label) == 0) {
+		return 1;
 	}
-
-	error_n = gpio_request(gpio_pin, GPIO_PIN_STR);
-
-	if(error_n != 0) {
-		printk(KERN_INFO "cannot claim gpio %d (error: %d)\n", gpio_pin, error_n);
-		return -1;
-	}
-	_free_gpio = 1;
-
-	if(gpio_direction_input(gpio_pin) < 0) {
-		printk(KERN_INFO "cannot set gpio %d as input\n", gpio_pin);
-		gpio_free(gpio_pin);
-		return -1;
-	}
-	
-	if((irq_gpio_pin = gpio_to_irq(gpio_pin)) < 0) {
-		printk(KERN_INFO "gpio to irq mapping failure %d\n", gpio_pin);
-		gpio_free(gpio_pin);
-		return -1;
-	}	
-	
-	if(request_irq(irq_gpio_pin, (irq_handler_t)pilight_irq, IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING, GPIO_PIN_STR, GPIO_PIN_DEV_STR) < 0) {
-		printk(KERN_INFO "cannot request irq for gpio %d\n", gpio_pin);
-		return -1;
-	}
-	disable_irq(irq_gpio_pin);
-	_free_irq = 1;
-
-	printk(KERN_INFO "successfully requested irq %d for gpio %d\n", irq_gpio_pin, gpio_pin);
 	return 0;
 }
 
+static int pilight_init_gpio(void) {
+
+	int ret, irq;
+	unsigned long flags;
+
+	gpiochip = gpiochip_find("bcm2708_gpio", is_right_chip);
+
+	if(!gpiochip) {
+		return -ENODEV;
+	}
+
+	if(gpio_request(gpio_pin, GPIO_PIN_STR)) {
+		printk(KERN_ALERT  ": cant claim gpio pin %d\n", gpio_pin);
+		ret = -ENODEV;
+        goto exit;
+	}
+	_free_gpio = 1;
+	gpiochip->direction_input(gpiochip, gpio_pin);
+	irq = gpiochip->to_irq(gpiochip, gpio_pin);
+	//printk(KERN_INFO "to_irq %d\n", irq);
+	irqdata = irq_get_irq_data(irq);
+
+    if(irqdata && irqdata->chip) {
+		irqchip = irqdata->chip;
+	} else {
+		ret = -ENODEV;
+		goto exit;
+	}
+	
+	if((irq_gpio_pin = gpiochip->to_irq(gpiochip, gpio_pin)) < 0) {
+		printk(KERN_INFO "gpio to irq mapping failure %d\n", gpio_pin);
+		goto exit;
+		ret = -1;
+	}	
+	
+	if(request_irq(irq_gpio_pin, (irq_handler_t)pilight_irq, 0, GPIO_PIN_STR, (void *)0) < 0) {
+		printk(KERN_INFO "cannot request irq for gpio %d\n", gpio_pin);
+		ret = -1;
+	}
+
+	_free_irq = 1;
+
+	spin_lock_irqsave(&lock, flags);
+	irqchip->irq_set_type(irqdata, IRQ_TYPE_EDGE_RISING | IRQ_TYPE_EDGE_FALLING);
+	irqchip->irq_unmask(irqdata);
+
+	spin_unlock_irqrestore(&lock, flags);
+	return 0;
+
+exit:
+	if(_free_gpio) {
+		gpio_free(gpio_pin);
+	}
+	return ret;
+}
+
 static void pilight_deinit_gpio(void) {
+	unsigned long flags;
+
 	if(_free_irq) {
-		free_irq(irq_gpio_pin, GPIO_PIN_DEV_STR);
+		spin_lock_irqsave(&lock, flags);
+		irqchip->irq_set_type(irqdata, 0);
+        irqchip->irq_mask(irqdata);
+		spin_unlock_irqrestore(&lock, flags);
+		free_irq(irq_gpio_pin, (void *)0);
 		_free_irq = 0;
 	}
 	if(_free_gpio) {
@@ -267,11 +314,12 @@ static void pilight_cleanup(int devices_to_destroy){
 }
 
 static int __init pilight_init(void) {
-	//printk(KERN_INFO "%s\n", __func__);
-	int error_n = 0, i = 0;
-	int devices_to_destroy = 0;
 	
+	int error_n = 0, i = 0;
+	int devices_to_destroy = 0;	
 	dev_t dev = 0;
+
+	//printk(KERN_INFO "%s\n", __func__);	
 	
 	memset(out_buf, '\0', OUTPUT_BUFFER_SIZE);
 	
@@ -315,13 +363,12 @@ static int __init pilight_init(void) {
 			pilight_cleanup(devices_to_destroy);
 			return error_n;
 		}
-	}
-
+	}	
+	
 	if(pilight_init_gpio() != 0) {
 		pilight_cleanup(devices_to_destroy);
 		return -1;
 	}
-	enable_irq(irq_gpio_pin);	
 	
 	printk(KERN_INFO "pilight device driver registered, major %d\n", major_device_num);
 	

@@ -61,11 +61,16 @@ unsigned short gpio_in_pin = -1;
 unsigned short gpio_out_pin = -1;
 unsigned short irq_gpio_pin = -1;
 
+static int pulse_tollerance = 10;
+
+module_param(pulse_tollerance, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+MODULE_PARM_DESC(pulse_tollerance, "Pulse length tollerance (us) for 433 MHz transmitter");
+
 module_param(gpio_in_pin, short, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARM_DESC(gpio_in_pin, "GPIO pin that is connected to the 433 Mhz receiver");
+MODULE_PARM_DESC(gpio_in_pin, "GPIO pin that is connected to the 433 MHz receiver");
 
 module_param(gpio_out_pin, short, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARM_DESC(gpio_out_pin, "GPIO pin that is connected to the 433 Mhz sender");
+MODULE_PARM_DESC(gpio_out_pin, "GPIO pin that is connected to the 433 MHz sender");
 
 char read_buf[READ_BUFFER_SIZE];
 
@@ -180,12 +185,12 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 		if (i%2){
 			//dprintk("gpio pin %d set to 0, delay: %d\n", gpio_out_pin, pulse_buf[i]);
 			gpio_set_value(gpio_out_pin,0);
-			udelay(pulse_buf[i]);
+			usleep_range(pulse_buf[i]-pulse_tollerance,pulse_buf[i]+pulse_tollerance);
 		}
 		else{
 			//dprintk("gpio pin %d set to 1, delay: %d\n", gpio_out_pin, pulse_buf[i]);
 			gpio_set_value(gpio_out_pin,1);
-			udelay(pulse_buf[i]);
+			usleep_range(pulse_buf[i]-pulse_tollerance,pulse_buf[i]+pulse_tollerance);
 		}
 
 	}

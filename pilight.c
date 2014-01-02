@@ -174,7 +174,7 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 	if (IS_ERR(pulse_buf))
 		return PTR_ERR(pulse_buf);
 
-	//disable_irq(irq_gpio_pin);
+	disable_irq(irq_gpio_pin);
 
 	for (i = 0; i < pulse_count; i++) {
 		if (i%2){
@@ -192,7 +192,7 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 	//dprintk("gpio pin %d set to 0\n", gpio_out_pin);
 	gpio_set_value(gpio_out_pin,0);
 
-	//enable_irq(irq_gpio_pin);
+	enable_irq(irq_gpio_pin);
 
 
 	return len;

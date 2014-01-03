@@ -176,10 +176,8 @@ static ssize_t pilight_read(struct file *f, char __user *buf, size_t len, loff_t
 static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len, loff_t *off) {
 	int pulse_count = 0, i;
 	int *pulse_buf;
-	struct timeval t;
-	struct tm broken;
 
-	//dprintk("pilight_write()\n");
+	dprintk("pilight_write()\n");
 
 	do_gettimeofday(&tv);
 
@@ -194,6 +192,8 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 		return PTR_ERR(pulse_buf);
 
 	disable_irq(irq_gpio_pin);
+
+	dprintk("pulses: %d\n",pulse_count);
 
 	for (i = 0; i < (pulse_count-1); i++) {
 		if (i%2){

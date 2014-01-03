@@ -14,6 +14,8 @@
 #include <linux/kfifo.h>
 #include <linux/delay.h>
 
+#define MAX_USLEEP					100*1000
+
 #define READ_BUFFER_SIZE			4000
 #define FIFO_BUFFER_SIZE			1800
 #define GPIO_IN						23
@@ -61,7 +63,7 @@ unsigned short gpio_in_pin = -1;
 unsigned short gpio_out_pin = -1;
 unsigned short irq_gpio_pin = -1;
 
-static int pulse_tollerance = 10;
+static int pulse_tollerance = 5;
 
 module_param(pulse_tollerance, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(pulse_tollerance, "Pulse length tollerance (us) for 433 MHz transmitter");
@@ -136,6 +138,15 @@ static int major_device_num = 0;
 static struct cdev *pilight_devices = NULL;
 static int pilight_devices_n = PILIGHT_DEVICES_N;
 
+static int safe_usleep(int microseconds){
+	if((microseconds > 0) && (microseconds < MAX_USLEEP)){
+		usleep_range((microseconds-pulse_tollerance),(microseconds+pulse_tollerance));
+	}else{
+		usleep_range((MAX_USLEEP - pulse_tollerance),(MAX_USLEEP + pulse_tollerance));
+	}
+	return 1;
+}
+
 static int pilight_open(struct inode *i, struct file *f) {
 	dprintk("pilight_open()\n");
 	return nonseekable_open(i, f);
@@ -165,10 +176,13 @@ static ssize_t pilight_read(struct file *f, char __user *buf, size_t len, loff_t
 static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len, loff_t *off) {
 	int pulse_count = 0, i;
 	int *pulse_buf;
+	struct timeval t;
+	struct tm broken;
 
 	//dprintk("pilight_write()\n");
 
-	
+	do_gettimeofday(&tv);
+
 	pulse_count = len / sizeof(int);
 
 	if (len % sizeof(int))
@@ -181,24 +195,29 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 
 	disable_irq(irq_gpio_pin);
 
-	for (i = 0; i < pulse_count; i++) {
+	for (i = 0; i < (pulse_count-1); i++) {
 		if (i%2){
-			//dprintk("gpio pin %d set to 0, delay: %d\n", gpio_out_pin, pulse_buf[i]);
+			//dprintk("gpio pin set to 0, pulse: %d, pulse length: %d\n",i , pulse_buf[i]);
 			gpio_set_value(gpio_out_pin,0);
-			usleep_range(pulse_buf[i]-pulse_tollerance,pulse_buf[i]+pulse_tollerance);
+			safe_usleep(pulse_buf[i]);
 		}
 		else{
-			//dprintk("gpio pin %d set to 1, delay: %d\n", gpio_out_pin, pulse_buf[i]);
+			//dprintk("gpio pin set to 1, pulse: %d, pulse length: %d\n",i , pulse_buf[i]);
 			gpio_set_value(gpio_out_pin,1);
-			usleep_range(pulse_buf[i]-pulse_tollerance,pulse_buf[i]+pulse_tollerance);
+			safe_usleep(pulse_buf[i]);
 		}
-
 	}
-	//dprintk("gpio pin %d set to 0\n", gpio_out_pin);
+
+	if (pulse_count%2){
+		//dprintk("gpio pin set to 1, last pulse\n");
+		gpio_set_value(gpio_out_pin,1);
+		safe_usleep(MAX_USLEEP);
+	}
+
+	//dprintk("gpio pin set to 0\n");
 	gpio_set_value(gpio_out_pin,0);
 
 	enable_irq(irq_gpio_pin);
-
 
 	return len;
 }
@@ -276,7 +295,7 @@ int pilight_init_gpio_out(void) {
 	}
 
 	gpio_set_value(gpio_out_pin,0);
-	
+
 	dprintk("successfully set gpio %d pin as output\n", gpio_out_pin);
 	return 0;
 }

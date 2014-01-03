@@ -179,8 +179,6 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 
 	dprintk("pilight_write()\n");
 
-	do_gettimeofday(&tv);
-
 	pulse_count = len / sizeof(int);
 
 	if (len % sizeof(int))
@@ -194,7 +192,7 @@ static ssize_t pilight_write(struct file *f, const char __user *buf, size_t len,
 	disable_irq(irq_gpio_pin);
 
 	dprintk("pulses: %d\n",pulse_count);
-
+	
 	for (i = 0; i < (pulse_count-1); i++) {
 		if (i%2){
 			//dprintk("gpio pin set to 0, pulse: %d, pulse length: %d\n",i , pulse_buf[i]);

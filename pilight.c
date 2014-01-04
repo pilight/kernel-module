@@ -18,8 +18,8 @@
 
 #define READ_BUFFER_SIZE			4000
 #define FIFO_BUFFER_SIZE			64
-#define GPIO_IN						18
-#define GPIO_OUT					19
+#define GPIO_IN						17
+#define GPIO_OUT					18
 #define LONGEST_VALID_PULSE			20000
 #define SHORTEST_VALID_PULSE		150
 

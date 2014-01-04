@@ -14,12 +14,12 @@
 #include <linux/kfifo.h>
 #include <linux/delay.h>
 
-#define MAX_USLEEP					100*1000
+#define MAX_USLEEP					50*1000
 
 #define READ_BUFFER_SIZE			4000
-#define FIFO_BUFFER_SIZE			1800
-#define GPIO_IN						23
-#define GPIO_OUT					27
+#define FIFO_BUFFER_SIZE			64
+#define GPIO_IN						18
+#define GPIO_OUT					19
 #define LONGEST_VALID_PULSE			20000
 #define SHORTEST_VALID_PULSE		150
 
@@ -67,12 +67,6 @@ static int pulse_tollerance = 5;
 
 module_param(pulse_tollerance, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(pulse_tollerance, "Pulse length tollerance (us) for 433 MHz transmitter");
-
-module_param(gpio_in_pin, short, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARM_DESC(gpio_in_pin, "GPIO pin that is connected to the 433 MHz receiver");
-
-module_param(gpio_out_pin, short, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARM_DESC(gpio_out_pin, "GPIO pin that is connected to the 433 MHz sender");
 
 char read_buf[READ_BUFFER_SIZE];
 

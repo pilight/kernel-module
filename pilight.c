@@ -221,7 +221,7 @@ int pilight_init_gpio_in(void) {
 	dprintk("starting gpio in request\n");
 
 	if(!gpio_is_valid(gpio_in_pin)) {
-		printk(KERN_INFO "gpio number %d is invalid\n", gpio_in_pin);
+		iprintk("gpio number %d is invalid\n", gpio_in_pin);
 		return -1;
 	}
 
@@ -267,7 +267,7 @@ int pilight_init_gpio_out(void) {
 	int error_n = 0;
 
 	if(!gpio_is_valid(gpio_out_pin)) {
-		printk(KERN_INFO "gpio number %d is invalid\n", gpio_out_pin);
+		iprintk("gpio number %d is invalid\n", gpio_out_pin);
 		return -1;
 	}
 
